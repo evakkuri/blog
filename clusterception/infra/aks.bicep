@@ -1,4 +1,3 @@
-// aks.bicep
 // Azure Kubernetes Cluster setup
 
 // Parameters
@@ -15,23 +14,39 @@ See template deploy.bicep for more details.
 ''')
 param developerIpRanges array
 
-@description('Resource ID of subnet to which cluster nodes will be deployed')
-param nodeSubnetId string
+@description('Resource ID of subnet to which default node pool nodes will be deployed')
+param defaultPoolNodeSubnetId string
+
+@description('Resource ID of subnet to which default node pool pods will be deployed')
+param defaultPoolPodSubnetId string
+
+@description('Common tags to apply to resources')
+param commonTags object
+
+@description('Resource ID of Log Analytics Workspace for container logs')
+param logAnalyticsWorkspaceId string
+
+@description('ID of user group to set as admins for AKS cluster.')
+param aksAdminGroupId string
 
 // Variables
 var devAksClusterName = 'clusterceptionaks'
 
-// Managed Identities for linking 
+// Managed Identities for linking Container Registry
 resource aksControlPlaneIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2022-01-31-preview' = {
   name: 'clusterception-msi-aks-controlplane'
   location: location
+  tags: commonTags
 }
 
 resource aksKubeletIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2022-01-31-preview' = {
   name: 'clusterception-msi-aks-kubelet'
   location: location
+  tags: commonTags
 }
 
+// Control Plane identity needs the Managed Identity Operator role in order to be able to set the kubelet identity
+// to the cluster
 resource managedIdentityOperatorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   name: 'f1a07417-d97a-45cb-824c-7a7467783830'
 }
@@ -49,6 +64,7 @@ resource aksControlPlaneIdentityManagedIdentityOperator 'Microsoft.Authorization
 // AKS Cluster
 resource devAks 'Microsoft.ContainerService/managedClusters@2022-09-02-preview' = {
   name: devAksClusterName
+  tags: commonTags
   dependsOn: [
     aksControlPlaneIdentityManagedIdentityOperator
   ]
@@ -60,6 +76,17 @@ resource devAks 'Microsoft.ContainerService/managedClusters@2022-09-02-preview' 
     }
   }
   properties: {
+    servicePrincipalProfile: {
+      clientId: 'msi'
+    }
+    addonProfiles: {
+      omsagent: {
+        enabled: true
+        config: {
+          logAnalyticsWorkspaceResourceID: logAnalyticsWorkspaceId
+        }
+      }
+    }
     identityProfile: {
       kubeletidentity: {
         clientId: aksKubeletIdentity.properties.clientId
@@ -69,7 +96,7 @@ resource devAks 'Microsoft.ContainerService/managedClusters@2022-09-02-preview' 
     }
     aadProfile: {
       adminGroupObjectIDs: [
-        
+        aksAdminGroupId
       ]
       enableAzureRBAC: true
       managed: true
@@ -77,10 +104,9 @@ resource devAks 'Microsoft.ContainerService/managedClusters@2022-09-02-preview' 
     autoUpgradeProfile: {
       upgradeChannel: 'patch'
     }
-    disableLocalAccounts: true
+    disableLocalAccounts: false
     networkProfile: {
       networkPlugin: 'azure'
-      networkPolicy: 'azure'
       dockerBridgeCidr: '172.17.0.1/16'
       dnsServiceIP: '10.2.0.10'
       serviceCidr: '10.2.0.0/24'
@@ -93,8 +119,8 @@ resource devAks 'Microsoft.ContainerService/managedClusters@2022-09-02-preview' 
         count: 2
 				vmSize: 'Standard_DS2_v2'
 				osType: 'Linux'
-				enableNodePublicIP: false
-				vnetSubnetID: nodeSubnetId
+				vnetSubnetID: defaultPoolNodeSubnetId
+        podSubnetID: defaultPoolPodSubnetId
       }
     ]
     nodeResourceGroup: '${devAksClusterName}-managed-rg'

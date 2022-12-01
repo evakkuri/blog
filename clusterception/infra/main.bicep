@@ -1,4 +1,3 @@
-// main.bicep
 // Main deployment template
 
 @allowed([
@@ -10,6 +9,9 @@ param location string = 'westeurope'
 
 @description('Array of IP address ranges, for use in resource firewalls.')
 param developerIpRanges array
+
+@description('ID of user group to set as admins for AKS cluster.')
+param aksAdminGroupId string
 
 @description('Common tags to apply to resources.')
 param commonTags object = {
@@ -28,18 +30,41 @@ resource vnet 'Microsoft.Network/virtualNetworks@2022-05-01' = {
     }
     subnets: [
       {
-        name: 'aks'
+        name: 'aks-nodes'
         properties: {
           addressPrefix: '10.0.0.0/24'
+        }
+      }
+      {
+        name: 'aks-defaultpool-pods'
+        properties: {
+          addressPrefix: '10.0.1.0/24'
+          delegations: [
+            {
+              name: 'aks-delegation'
+              properties: {
+                serviceName: 'Microsoft.ContainerService/managedClusters'
+              }
+            }
+          ]
         }
       }
     ]
   }
   tags: commonTags
 
-  resource aksSubnet 'subnets' existing = {
-    name: 'aks'
+  resource aksNodeSubnet 'subnets' existing = {
+    name: 'aks-nodes'
   }
+
+  resource aksDefaultNodePoolPodSubnet 'subnets' existing = {
+    name: 'aks-defaultpool-pods'
+  }
+}
+
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+  name: 'clusterception-la'
+  location: location
 }
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' = {
@@ -50,12 +75,17 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
   }
 }
 
+
 module aks 'aks.bicep' = {
   name: '${deployment().name}_aks'
   params: {
     developerIpRanges: developerIpRanges
     location: location
-    nodeSubnetId: vnet::aksSubnet.id
+    defaultPoolNodeSubnetId: vnet::aksNodeSubnet.id
+    defaultPoolPodSubnetId: vnet::aksDefaultNodePoolPodSubnet.id
+    logAnalyticsWorkspaceId: logAnalyticsWorkspace.id
+    aksAdminGroupId: aksAdminGroupId
+    commonTags: commonTags
   }
 }
 
