@@ -30,7 +30,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2022-05-01' = {
     }
     subnets: [
       {
-        name: 'aks-nodes'
+        name: 'aks-defaultpool-nodes'
         properties: {
           addressPrefix: '10.0.0.0/24'
         }

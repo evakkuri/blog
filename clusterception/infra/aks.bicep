@@ -76,9 +76,6 @@ resource devAks 'Microsoft.ContainerService/managedClusters@2022-09-02-preview' 
     }
   }
   properties: {
-    servicePrincipalProfile: {
-      clientId: 'msi'
-    }
     addonProfiles: {
       omsagent: {
         enabled: true
@@ -101,15 +98,16 @@ resource devAks 'Microsoft.ContainerService/managedClusters@2022-09-02-preview' 
       enableAzureRBAC: true
       managed: true
     }
+    disableLocalAccounts: true
     autoUpgradeProfile: {
       upgradeChannel: 'patch'
     }
-    disableLocalAccounts: false
     networkProfile: {
       networkPlugin: 'azure'
       dockerBridgeCidr: '172.17.0.1/16'
       dnsServiceIP: '10.2.0.10'
       serviceCidr: '10.2.0.0/24'
+      loadBalancerSku: 'standard'
     }
     agentPoolProfiles: [
       {
